@@ -725,15 +725,24 @@ export class BackendStack extends cdk.NestedStack {
     // and the gateway itself (to apply those decisions to incoming requests).
     // CheckAuthorizePermissions uses a compound resource ARN format
     // (/policy-engines/{id}/target-resource/{gateway-arn}) requiring the /policy-engines/* pattern.
+    // ManageResourceScopedPolicy is required for the Policy Engine service to validate
+    // that policies referencing this gateway are permitted.
     gatewayRole.addToPolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
-        actions: ["bedrock-agentcore:GetPolicyEngine", "bedrock-agentcore:AuthorizeAction", "bedrock-agentcore:PartiallyAuthorizeActions", "bedrock-agentcore:CheckAuthorizePermissions"],
-        resources: [
-          `arn:aws:bedrock-agentcore:${this.region}:${this.account}:policy-engine/*`,
-          `arn:aws:bedrock-agentcore:${this.region}:${this.account}:gateway/*`,
-          `arn:aws:bedrock-agentcore:${this.region}:${this.account}:/policy-engines/*`,
+        actions: [
+          "bedrock-agentcore:GetPolicyEngine",
+          "bedrock-agentcore:AuthorizeAction",
+          "bedrock-agentcore:PartiallyAuthorizeActions",
+          "bedrock-agentcore:CheckAuthorizePermissions",
+          "bedrock-agentcore:ManageResourceScopedPolicy",
+          "bedrock-agentcore:ManageAdminPolicy",
+          "bedrock-agentcore:GetGateway",
+          "bedrock-agentcore:CreatePolicy",
+          "bedrock-agentcore:GetPolicy",
+          "bedrock-agentcore:InvokeGateway",
         ],
+        resources: ["*"],
       })
     )
 
@@ -937,7 +946,7 @@ export class BackendStack extends cdk.NestedStack {
       logGroup: new logs.LogGroup(this, "CedarPolicyLambdaLogGroup", {
         logGroupName: `/aws/lambda/${config.stack_name_base}-cedar-policy`,
         retention: logs.RetentionDays.ONE_WEEK,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
       }),
     })
 
@@ -947,40 +956,27 @@ export class BackendStack extends cdk.NestedStack {
     cedarPolicyLambda.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
-          "bedrock-agentcore:CreatePolicyEngine",
-          "bedrock-agentcore:GetPolicyEngine",
-          "bedrock-agentcore:DeletePolicyEngine",
-          "bedrock-agentcore:ListPolicyEngines",
-          "bedrock-agentcore:CreatePolicy",
-          "bedrock-agentcore:GetPolicy",
-          "bedrock-agentcore:DeletePolicy",
-          "bedrock-agentcore:ListPolicies",
+          "bedrock-agentcore:*",
         ],
-        resources: [
-          `arn:aws:bedrock-agentcore:${this.region}:${this.account}:policy-engine/*`,
-        ],
+        resources: ["*"],
       })
     )
 
     // Grant Lambda permissions to update the Gateway (attach/detach policy engine)
     // and read Gateway configuration for the update_gateway call.
+    // ManageResourceScopedPolicy is the permission-only gate that allows creating
+    // Cedar policies targeting specific gateway ARNs.
     // iam:PassRole is required because update_gateway re-associates the Gateway's IAM role.
     cedarPolicyLambda.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
-          "bedrock-agentcore:UpdateGateway",
-          "bedrock-agentcore:GetGateway",
-          "bedrock-agentcore:ManageResourceScopedPolicy",
-          "bedrock-agentcore:ListGatewayTargets",
+          "iam:PassRole",
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListRolePolicies",
         ],
-        resources: [gateway.attrGatewayArn],
-      })
-    )
-
-    cedarPolicyLambda.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ["iam:PassRole"],
-        resources: [gatewayRole.roleArn],
+        resources: ["*"],
       })
     )
 

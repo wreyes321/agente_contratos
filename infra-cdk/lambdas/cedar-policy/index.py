@@ -81,8 +81,13 @@ def handle_create(props: dict) -> dict:
 
     Steps:
       1. Create Policy Engine -> wait for ACTIVE (official waiter)
-      2. Create Cedar Policy -> wait for ACTIVE (official waiter)
-      3. Attach Policy Engine to Gateway -> wait for READY (custom polling)
+      2. Attach Policy Engine to Gateway -> wait for READY (custom polling)
+      3. Create Cedar Policy -> wait for ACTIVE (official waiter)
+
+    The Policy Engine must be attached to the Gateway BEFORE creating the
+    Cedar Policy. The Policy Engine service validates that it has permissions
+    to access the Gateway referenced in the policy statement. This validation
+    only succeeds once the engine is already attached to the gateway.
 
     Args:
         props: ResourceProperties from CloudFormation event.
@@ -115,28 +120,70 @@ def handle_create(props: dict) -> dict:
     engine_details = client.get_policy_engine(policyEngineId=policy_engine_id)
     policy_engine_arn = engine_details["policyEngineArn"]
 
-    # Step 2: Create Cedar Policy
-    # Policy name format: {engine_name}_cp_{timestamp}
-    # The AgentCore API enforces a 48-character limit on policy names.
+    # Step 2: Attach Policy Engine to Gateway FIRST
+    # The Policy Engine service validates gateway references in Cedar policies.
+    # This validation requires the engine to be attached to the gateway.
+    _attach_policy_engine_to_gateway(gateway_id, policy_engine_arn)
+
+    # Step 3: Create Cedar Policy (with retry for eventual consistency)
     policy_name = f"{engine_name}_cp_{int(time.time())}"
     logger.info(f"Creating Cedar Policy: {policy_name}")
-    policy_response = client.create_policy(
-        policyEngineId=policy_engine_id,
-        name=policy_name,
-        description=description,
-        definition={"cedar": {"statement": policy_document}},
-    )
-    policy_id = policy_response["policyId"]
-    logger.info(f"Cedar Policy created: {policy_id}")
 
-    # Wait for Cedar Policy to become ACTIVE using official waiter
-    logger.info(f"Waiting for Cedar Policy {policy_id} to become ACTIVE...")
-    waiter = client.get_waiter("policy_active")
-    waiter.wait(policyEngineId=policy_engine_id, policyId=policy_id)
-    logger.info(f"Cedar Policy {policy_id} is now ACTIVE")
+    max_retries = 3
+    retry_delay = 10  # seconds
+    policy_id = None
 
-    # Step 3: Attach Policy Engine to Gateway
-    _attach_policy_engine_to_gateway(gateway_id, policy_engine_arn)
+    for attempt in range(max_retries):
+        policy_response = client.create_policy(
+            policyEngineId=policy_engine_id,
+            name=policy_name if attempt == 0 else f"{engine_name}_cp_{int(time.time())}",
+            description=description,
+            definition={"cedar": {"statement": policy_document}},
+        )
+        policy_id = policy_response["policyId"]
+        logger.info(f"Cedar Policy created (attempt {attempt + 1}): {policy_id}")
+
+        # Wait for Cedar Policy to become ACTIVE using official waiter
+        logger.info(f"Waiting for Cedar Policy {policy_id} to become ACTIVE...")
+        try:
+            waiter = client.get_waiter("policy_active")
+            waiter.wait(policyEngineId=policy_engine_id, policyId=policy_id)
+            logger.info(f"Cedar Policy {policy_id} is now ACTIVE")
+            break
+        except Exception as e:
+            # Check if policy reached CREATE_FAILED
+            try:
+                policy_status = client.get_policy(
+                    policyEngineId=policy_engine_id, policyId=policy_id
+                )
+                status = policy_status.get("status", "")
+                reasons = policy_status.get("statusReasons", [])
+                logger.warning(
+                    f"Policy status: {status}, reasons: {reasons} (attempt {attempt + 1}/{max_retries})"
+                )
+            except Exception:
+                pass
+
+            if attempt < max_retries - 1:
+                # Delete the failed policy before retrying
+                logger.info(f"Deleting failed policy {policy_id} before retry...")
+                try:
+                    client.delete_policy(
+                        policyEngineId=policy_engine_id, policyId=policy_id
+                    )
+                    delete_waiter = client.get_waiter("policy_deleted")
+                    delete_waiter.wait(
+                        policyEngineId=policy_engine_id, policyId=policy_id
+                    )
+                except Exception:
+                    pass
+                logger.info(f"Waiting {retry_delay}s before retry...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # exponential backoff
+            else:
+                raise RuntimeError(
+                    f"Cedar Policy failed after {max_retries} attempts: {e}"
+                )
 
     # Encode both IDs in PhysicalResourceId for use in Update/Delete
     physical_id = f"{policy_engine_id}|{policy_id}"

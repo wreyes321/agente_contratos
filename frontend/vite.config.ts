@@ -20,15 +20,16 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          "react-vendor": ["react", "react-dom", "react-router-dom"],
-          "ui-vendor": [
-            "@radix-ui/react-dialog",
-            "@radix-ui/react-select",
-            "@radix-ui/react-alert-dialog",
-            "@radix-ui/react-progress",
-          ],
-          "auth-vendor": ["react-oidc-context", "aws-amplify"],
+        manualChunks(id: string) {
+          if (id.includes("react-dom") || id.includes("react-router-dom") || id.includes("/react/")) {
+            return "react-vendor"
+          }
+          if (id.includes("@radix-ui")) {
+            return "ui-vendor"
+          }
+          if (id.includes("react-oidc-context") || id.includes("aws-amplify")) {
+            return "auth-vendor"
+          }
         },
       },
     },
