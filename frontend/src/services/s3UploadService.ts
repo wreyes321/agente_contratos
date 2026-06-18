@@ -4,8 +4,9 @@
  * Target: cassa-documentos-ingesta/contratos/
  */
 
-import { S3Client, PutObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3"
+import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3"
 import { fromCognitoIdentityPool } from "@aws-sdk/credential-provider-cognito-identity"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 let s3Client: S3Client | null = null
 let config: { awsRegion: string; identityPoolId: string; authority: string } | null = null
@@ -135,4 +136,22 @@ export async function listDocuments(idToken: string): Promise<DocumentItem[]> {
   }
 
   return documents
+}
+
+/**
+ * Get a presigned URL to download/preview a document
+ */
+export async function getDocumentPreviewUrl(
+  key: string,
+  idToken: string
+): Promise<string> {
+  const client = await getS3Client(idToken)
+
+  const command = new GetObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: key,
+  })
+
+  const url = await getSignedUrl(client, command, { expiresIn: 3600 })
+  return url
 }

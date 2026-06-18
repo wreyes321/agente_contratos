@@ -10,13 +10,31 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  Eye,
+  Download,
+  Search,
+  FolderOpen,
+  MoreVertical,
+  Clock,
+  HardDrive,
+  CalendarDays,
+  Plus,
+  Filter,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   uploadDocument,
   listDocuments,
+  getDocumentPreviewUrl,
   UploadResult,
   DocumentItem,
 } from "@/services/s3UploadService"
@@ -37,9 +55,14 @@ export function DocumentUpload() {
   const [existingDocs, setExistingDocs] = useState<DocumentItem[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isLoadingDocs, setIsLoadingDocs] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewFileName, setPreviewFileName] = useState("")
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+  const [selectedDoc, setSelectedDoc] = useState<DocumentItem | null>(null)
+  const [showUploadZone, setShowUploadZone] = useState(false)
   const { token } = useAuth()
 
-  // Load existing documents on mount
   useEffect(() => {
     if (token) {
       loadExistingDocuments()
@@ -67,14 +90,14 @@ export function DocumentUpload() {
       progress: 0,
     }))
     setFiles((prev) => [...prev, ...newFiles])
+    setShowUploadZone(true)
   }, [])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
-    accept: {
-      "application/pdf": [".pdf"],
-    },
-    maxSize: 50 * 1024 * 1024, // 50MB
+    accept: { "application/pdf": [".pdf"] },
+    maxSize: 50 * 1024 * 1024,
+    noClick: true,
   })
 
   const removeFile = (id: string) => {
@@ -82,36 +105,23 @@ export function DocumentUpload() {
   }
 
   const uploadFiles = async () => {
-    if (!token) {
-      alert("Debes iniciar sesión para subir archivos")
-      return
-    }
-
+    if (!token) return
     setIsUploading(true)
-
     const pendingFiles = files.filter((f) => f.status === "pending")
 
     for (const fileWithStatus of pendingFiles) {
       setFiles((prev) =>
         prev.map((f) =>
-          f.id === fileWithStatus.id
-            ? { ...f, status: "uploading" as const }
-            : f
+          f.id === fileWithStatus.id ? { ...f, status: "uploading" as const } : f
         )
       )
 
       try {
-        const result = await uploadDocument(
-          fileWithStatus.file,
-          token,
-          (progress) => {
-            setFiles((prev) =>
-              prev.map((f) =>
-                f.id === fileWithStatus.id ? { ...f, progress } : f
-              )
-            )
-          }
-        )
+        const result = await uploadDocument(fileWithStatus.file, token, (progress) => {
+          setFiles((prev) =>
+            prev.map((f) => (f.id === fileWithStatus.id ? { ...f, progress } : f))
+          )
+        })
 
         setFiles((prev) =>
           prev.map((f) =>
@@ -121,8 +131,7 @@ export function DocumentUpload() {
           )
         )
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Error desconocido"
+        const errorMessage = error instanceof Error ? error.message : "Error desconocido"
         setFiles((prev) =>
           prev.map((f) =>
             f.id === fileWithStatus.id
@@ -134,16 +143,57 @@ export function DocumentUpload() {
     }
 
     setIsUploading(false)
-    // Refresh the document list
     loadExistingDocuments()
   }
 
   const clearCompleted = () => {
     setFiles((prev) => prev.filter((f) => f.status !== "success"))
+    if (files.filter((f) => f.status !== "success").length === 0) {
+      setShowUploadZone(false)
+    }
+  }
+
+  const openPreview = async (doc: DocumentItem) => {
+    if (!token) return
+    setIsLoadingPreview(true)
+    setPreviewFileName(doc.fileName)
+    try {
+      const url = await getDocumentPreviewUrl(doc.key, token)
+      setPreviewUrl(url)
+    } catch (error) {
+      console.error("Error getting preview URL:", error)
+    } finally {
+      setIsLoadingPreview(false)
+    }
+  }
+
+  const downloadDocument = async (doc: DocumentItem) => {
+    if (!token) return
+    try {
+      const url = await getDocumentPreviewUrl(doc.key, token)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = doc.fileName
+      link.target = "_blank"
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (error) {
+      console.error("Error downloading document:", error)
+    }
   }
 
   const pendingCount = files.filter((f) => f.status === "pending").length
   const successCount = files.filter((f) => f.status === "success").length
+
+  const filteredDocs = existingDocs.filter((doc) =>
+    doc.fileName.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  // Recent files: last 4 uploaded
+  const recentDocs = [...existingDocs]
+    .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime())
+    .slice(0, 4)
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`
@@ -151,206 +201,370 @@ export function DocumentUpload() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
 
+  const formatDate = (dateStr: string): string => {
+    return new Date(dateStr).toLocaleDateString("es-CR", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+  }
+
+  const formatDateFull = (dateStr: string): string => {
+    return new Date(dateStr).toLocaleDateString("es-CR", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
   return (
-    <div className="flex flex-col h-full p-6 max-w-4xl mx-auto w-full overflow-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-foreground">
-          Cargar Documentos
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Sube archivos PDF para procesarlos con el agente. Los documentos se
-          almacenan en Amazon S3.
-        </p>
-      </div>
+    <div {...getRootProps()} className="flex h-full overflow-hidden">
+      <input {...getInputProps()} />
 
-      {/* Dropzone */}
-      <Card
-        {...getRootProps()}
-        className={cn(
-          "border-2 border-dashed p-8 text-center cursor-pointer transition-all duration-200",
-          isDragActive
-            ? "border-primary bg-primary/5 scale-[1.01]"
-            : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
-        )}
-      >
-        <input {...getInputProps()} />
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className={cn(
-              "rounded-full p-4 transition-colors",
-              isDragActive ? "bg-primary/10" : "bg-muted"
-            )}
-          >
-            <Upload
-              className={cn(
-                "h-8 w-8",
-                isDragActive ? "text-primary" : "text-muted-foreground"
-              )}
-            />
-          </div>
-          <div>
-            <p className="text-lg font-medium">
-              {isDragActive
-                ? "Suelta los archivos aquí"
-                : "Arrastra y suelta archivos PDF"}
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              o haz clic para seleccionar archivos (máx. 50MB)
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      {/* Upload Queue */}
-      {files.length > 0 && (
-        <div className="mt-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-foreground">
-              Cola de subida ({files.length})
-            </h2>
-            <div className="flex gap-2">
-              {successCount > 0 && (
-                <Button variant="ghost" size="sm" onClick={clearCompleted}>
-                  Limpiar completados
-                </Button>
-              )}
-              {pendingCount > 0 && (
-                <Button size="sm" onClick={uploadFiles} disabled={isUploading}>
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Subiendo...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Subir {pendingCount} archivo
-                      {pendingCount > 1 ? "s" : ""}
-                    </>
-                  )}
-                </Button>
-              )}
+      {/* Drag overlay */}
+      {isDragActive && (
+        <div className="absolute inset-0 z-50 bg-primary/5 border-2 border-dashed border-primary rounded-lg flex items-center justify-center backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3">
+            <div className="rounded-full p-4 bg-primary/10">
+              <Upload className="h-10 w-10 text-primary" />
             </div>
-          </div>
-
-          <div className="space-y-2">
-            {files.map((fileWithStatus) => (
-              <Card
-                key={fileWithStatus.id}
-                className="p-4 flex items-center gap-3"
-              >
-                <div className="shrink-0">
-                  {fileWithStatus.status === "success" ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  ) : fileWithStatus.status === "error" ? (
-                    <AlertCircle className="h-5 w-5 text-destructive" />
-                  ) : fileWithStatus.status === "uploading" ? (
-                    <Loader2 className="h-5 w-5 text-primary animate-spin" />
-                  ) : (
-                    <FileText className="h-5 w-5 text-muted-foreground" />
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {fileWithStatus.file.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatFileSize(fileWithStatus.file.size)}
-                    {fileWithStatus.status === "error" &&
-                      fileWithStatus.error && (
-                        <span className="text-destructive ml-2">
-                          — {fileWithStatus.error}
-                        </span>
-                      )}
-                    {fileWithStatus.status === "success" && (
-                      <span className="text-green-600 ml-2">
-                        — Subido exitosamente
-                      </span>
-                    )}
-                  </p>
-
-                  {fileWithStatus.status === "uploading" && (
-                    <Progress
-                      value={fileWithStatus.progress}
-                      className="mt-2 h-1.5"
-                    />
-                  )}
-                </div>
-
-                {(fileWithStatus.status === "pending" ||
-                  fileWithStatus.status === "error") && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeFile(fileWithStatus.id)}
-                    className="shrink-0"
-                    aria-label={`Eliminar ${fileWithStatus.file.name}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </Card>
-            ))}
+            <p className="text-lg font-medium text-primary">Suelta los archivos aquí</p>
           </div>
         </div>
       )}
 
-      {/* Existing Documents */}
-      <div className="mt-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-foreground">
-            Documentos en S3 ({existingDocs.length})
-          </h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={loadExistingDocuments}
-            disabled={isLoadingDocs}
-          >
-            <RefreshCw
-              className={cn("h-4 w-4 mr-1", isLoadingDocs && "animate-spin")}
-            />
-            Actualizar
-          </Button>
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Top bar */}
+        <div className="shrink-0 px-6 py-4 border-b flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold">Mis Documentos</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar archivos..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 bg-muted/50"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadExistingDocuments}
+              disabled={isLoadingDocs}
+              className="h-9"
+            >
+              <RefreshCw className={cn("h-4 w-4", isLoadingDocs && "animate-spin")} />
+            </Button>
+            <Button size="sm" onClick={open} className="h-9">
+              <Plus className="h-4 w-4 mr-1.5" />
+              Subir archivo
+            </Button>
+          </div>
         </div>
 
-        {isLoadingDocs ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : existingDocs.length === 0 ? (
-          <Card className="p-6 text-center">
-            <p className="text-muted-foreground">
-              No hay documentos en el bucket.
-            </p>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {existingDocs.map((doc) => (
-              <Card key={doc.key} className="p-4 flex items-center gap-3">
-                <FileText className="h-5 w-5 text-red-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {doc.fileName}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatFileSize(doc.size)} •{" "}
-                    {new Date(doc.lastModified).toLocaleDateString("es-CR", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-auto p-6 space-y-6">
+          {/* Upload Zone (shown when files are queued or toggled) */}
+          {(showUploadZone || files.length > 0) && (
+            <Card className="p-4 border-primary/20 bg-primary/[0.02]">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium flex items-center gap-2">
+                  <Upload className="h-4 w-4 text-primary" />
+                  Cola de subida ({files.length})
+                </h3>
+                <div className="flex gap-2">
+                  {successCount > 0 && (
+                    <Button variant="ghost" size="sm" onClick={clearCompleted} className="h-7 text-xs">
+                      Limpiar
+                    </Button>
+                  )}
+                  {pendingCount > 0 && (
+                    <Button size="sm" onClick={uploadFiles} disabled={isUploading} className="h-7 text-xs">
+                      {isUploading ? (
+                        <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" />Subiendo...</>
+                      ) : (
+                        <><Upload className="h-3 w-3 mr-1.5" />Subir {pendingCount}</>
+                      )}
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => { setShowUploadZone(false); setFiles([]) }} className="h-7 w-7 p-0">
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                {files.map((f) => (
+                  <div key={f.id} className="flex items-center gap-3 px-3 py-2 rounded-md bg-background border">
+                    <div className="shrink-0">
+                      {f.status === "success" ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      ) : f.status === "error" ? (
+                        <AlertCircle className="h-4 w-4 text-destructive" />
+                      ) : f.status === "uploading" ? (
+                        <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{f.file.name}</p>
+                      {f.status === "uploading" && <Progress value={f.progress} className="mt-1 h-1" />}
+                      {f.status === "error" && <p className="text-xs text-destructive">{f.error}</p>}
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.file.size)}</span>
+                    {(f.status === "pending" || f.status === "error") && (
+                      <button onClick={() => removeFile(f.id)} className="text-muted-foreground hover:text-foreground">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Recent Files */}
+          {recentDocs.length > 0 && !searchQuery && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  Archivos recientes
+                </h2>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {recentDocs.map((doc) => (
+                  <Card
+                    key={doc.key}
+                    className={cn(
+                      "p-4 cursor-pointer transition-all hover:shadow-md hover:border-primary/30 group",
+                      selectedDoc?.key === doc.key && "border-primary shadow-md"
+                    )}
+                    onClick={() => setSelectedDoc(doc)}
+                    onDoubleClick={() => openPreview(doc)}
+                  >
+                    <div className="flex flex-col items-center text-center gap-2">
+                      <div className="relative">
+                        <div className="w-12 h-14 rounded bg-red-50 dark:bg-red-950/30 flex items-center justify-center">
+                          <FileText className="h-6 w-6 text-red-500" />
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openPreview(doc) }}
+                          className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background border rounded-full p-1 shadow-sm hover:bg-muted"
+                        >
+                          <MoreVertical className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <p className="text-xs font-medium truncate w-full" title={doc.fileName}>
+                        {doc.fileName}
+                      </p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* All Files Table */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-medium text-foreground flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                Todos los archivos
+                <span className="text-xs text-muted-foreground font-normal ml-1">
+                  {filteredDocs.length} total
+                </span>
+              </h2>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+                <Filter className="h-3 w-3" />
+                Filtrar
+              </Button>
+            </div>
+
+            {isLoadingDocs ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Cargando documentos...</p>
+                </div>
+              </div>
+            ) : filteredDocs.length === 0 ? (
+              <Card className="p-12 text-center">
+                <FolderOpen className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground font-medium">
+                  {searchQuery ? "No se encontraron documentos" : "No hay documentos"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 mb-4">
+                  {searchQuery ? "Intenta con otro término" : "Sube tu primer documento para empezar"}
+                </p>
+                {!searchQuery && (
+                  <Button size="sm" onClick={open}>
+                    <Plus className="h-4 w-4 mr-1.5" />
+                    Subir archivo
+                  </Button>
+                )}
               </Card>
-            ))}
+            ) : (
+              <div className="border rounded-lg overflow-hidden bg-card">
+                {/* Table Header */}
+                <div className="grid grid-cols-[1fr_100px_140px_60px] gap-4 px-4 py-2.5 bg-muted/40 border-b">
+                  <span className="text-xs font-medium text-muted-foreground">Nombre del archivo</span>
+                  <span className="text-xs font-medium text-muted-foreground">Tamaño</span>
+                  <span className="text-xs font-medium text-muted-foreground">Última modificación</span>
+                  <span className="text-xs font-medium text-muted-foreground text-center">···</span>
+                </div>
+
+                {/* Table Rows */}
+                <div className="divide-y">
+                  {filteredDocs.map((doc) => (
+                    <div
+                      key={doc.key}
+                      onClick={() => setSelectedDoc(doc)}
+                      onDoubleClick={() => openPreview(doc)}
+                      className={cn(
+                        "grid grid-cols-[1fr_100px_140px_60px] gap-4 px-4 py-3 items-center cursor-pointer transition-colors group",
+                        selectedDoc?.key === doc.key
+                          ? "bg-primary/5"
+                          : "hover:bg-muted/30"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="shrink-0 w-8 h-8 rounded-md bg-red-50 dark:bg-red-950/30 flex items-center justify-center">
+                          <FileText className="h-4 w-4 text-red-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{doc.fileName}</p>
+                          <p className="text-xs text-muted-foreground">{formatFileSize(doc.size)}</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{formatFileSize(doc.size)}</p>
+                      <p className="text-xs text-muted-foreground">{formatDate(doc.lastModified)}</p>
+                      <div className="flex items-center justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openPreview(doc) }}
+                          className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          title="Previsualizar"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); downloadDocument(doc) }}
+                          className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          title="Descargar"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
+
+      {/* Right panel - File Details */}
+      {selectedDoc && (
+        <div className="w-72 border-l bg-muted/20 shrink-0 flex flex-col overflow-auto">
+          <div className="p-4 border-b flex items-center justify-between">
+            <h3 className="text-sm font-medium">Detalles del archivo</h3>
+            <button
+              onClick={() => setSelectedDoc(null)}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="p-4 flex flex-col items-center text-center border-b">
+            <div className="w-16 h-20 rounded-lg bg-red-50 dark:bg-red-950/30 flex items-center justify-center mb-3">
+              <FileText className="h-8 w-8 text-red-500" />
+            </div>
+            <p className="text-sm font-medium break-all px-2">{selectedDoc.fileName}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Modificado {formatDate(selectedDoc.lastModified)}
+            </p>
+          </div>
+
+          <div className="p-4 space-y-4">
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Información
+            </h4>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Tamaño</p>
+                  <p className="text-sm font-medium">{formatFileSize(selectedDoc.size)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Fecha</p>
+                  <p className="text-sm font-medium">{formatDateFull(selectedDoc.lastModified)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Ubicación</p>
+                  <p className="text-sm font-medium truncate">contratos/</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 mt-auto border-t space-y-2">
+            <Button size="sm" className="w-full" onClick={() => openPreview(selectedDoc)}>
+              <Eye className="h-4 w-4 mr-2" />
+              Previsualizar
+            </Button>
+            <Button variant="outline" size="sm" className="w-full" onClick={() => downloadDocument(selectedDoc)}>
+              <Download className="h-4 w-4 mr-2" />
+              Descargar
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* PDF Preview Dialog */}
+      <Dialog
+        open={!!previewUrl || isLoadingPreview}
+        onOpenChange={() => { setPreviewUrl(null); setPreviewFileName("") }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 py-4 border-b shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-4 w-4 text-red-500" />
+              {previewFileName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {isLoadingPreview ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Cargando documento...</p>
+                </div>
+              </div>
+            ) : previewUrl ? (
+              <iframe
+                src={previewUrl}
+                className="w-full h-full border-0"
+                title={`Preview: ${previewFileName}`}
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
