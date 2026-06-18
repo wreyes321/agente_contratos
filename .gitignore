@@ -26,7 +26,6 @@ notebooks/examples/data
 **/.envrc
 **/node_modules
 **/.vite
-frontend/public/aws-exports.json
 .venv
 scripts/zip-artifact/
 public/
