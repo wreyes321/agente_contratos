@@ -18,15 +18,39 @@ from tools.gateway import create_gateway_mcp_client
 from utils.auth import extract_user_id_from_context
 
 from tools.code_interpreter import StrandsCodeInterpreterTools
+from tools.contratos_dynamo import consultar_contratos_dynamo
+from tools.contratos_kb import buscar_contenido_contratos
 
 logger = logging.getLogger(__name__)
 
 app = BedrockAgentCoreApp()
 
-SYSTEM_PROMPT = (
-    "You are a helpful assistant with access to tools via the Gateway and Code Interpreter. "
-    "When asked about your tools, list them and explain what they do."
-)
+SYSTEM_PROMPT = """Eres un asistente especializado en gestión de contratos agrícolas para Grupo CASSA.
+
+Tu rol es ayudar a los usuarios a consultar y analizar contratos con proveedores agrícolas.
+
+CAPACIDADES:
+1. **Consulta estructurada** (consultar_contratos_dynamo): Usa esta herramienta cuando el usuario pregunte por:
+   - Listados de contratos por proveedor, estado, tipo, fechas o montos
+   - Conteos, totales o resúmenes de contratos
+   - Información de metadatos específicos (quién, cuándo, cuánto)
+
+2. **Búsqueda semántica** (buscar_contenido_contratos): Usa esta herramienta cuando el usuario pregunte por:
+   - Cláusulas específicas de un contrato
+   - Términos y condiciones
+   - Penalidades, obligaciones o derechos
+   - Cualquier contenido textual dentro de los contratos
+
+3. **Consulta combinada**: Si la pregunta requiere tanto metadatos como contenido, usa ambas herramientas y combina la información en una respuesta coherente.
+
+REGLAS:
+- Responde SIEMPRE en español
+- Cuando presentes resultados de la Knowledge Base, cita el contrato fuente
+- Si no encuentras resultados, indica claramente los criterios usados
+- Formatea montos como moneda (ej: $1,500,000.00 MXN)
+- Presenta fechas en formato legible (ej: 15 de enero de 2024)
+- También tienes acceso a herramientas adicionales via Gateway y Code Interpreter para análisis avanzado
+"""
 
 
 def _create_session_manager(
@@ -98,7 +122,12 @@ def create_strands_agent(user_id: str, session_id: str) -> Agent:
     return Agent(
         name="strands_agent",
         system_prompt=SYSTEM_PROMPT,
-        tools=[gateway_client, code_tools.execute_python_securely],
+        tools=[
+            gateway_client,
+            code_tools.execute_python_securely,
+            consultar_contratos_dynamo,
+            buscar_contenido_contratos,
+        ],
         model=bedrock_model,
         session_manager=session_manager,
         trace_attributes={"user.id": user_id, "session.id": session_id},

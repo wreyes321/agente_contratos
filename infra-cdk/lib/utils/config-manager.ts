@@ -53,6 +53,12 @@ export interface AppConfig {
      * Maps to the relevance_score parameter of RetrievalConfig. Defaults to 0.3.
      */
     ltm_relevance_score: number
+    /**
+     * ID of the Bedrock Knowledge Base for contract semantic search.
+     * Created manually or via script; CDK only configures permissions and passes the ID.
+     * Leave empty until the KB is created.
+     */
+    knowledge_base_id?: string
   }
 }
 
@@ -146,6 +152,7 @@ export class ConfigManager {
           use_long_term_memory: parsedConfig.backend?.use_long_term_memory === true,
           ltm_top_k: parsedConfig.backend?.ltm_top_k ?? 10,
           ltm_relevance_score: parsedConfig.backend?.ltm_relevance_score ?? 0.3,
+          knowledge_base_id: parsedConfig.backend?.knowledge_base_id || "",
         },
       }
     } catch (error) {

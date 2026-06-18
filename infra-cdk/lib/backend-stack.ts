@@ -91,6 +91,9 @@ export class BackendStack extends cdk.NestedStack {
     // Create Feedback DynamoDB table (example of application data storage)
     const feedbackTable = this.createFeedbackTable(props.config)
 
+    // Create Contratos DynamoDB table (structured metadata for contract queries)
+    const contratosTable = this.createContratosTable(props.config)
+
     // Create API Gateway Feedback API resources (example of best-practice API Gateway + Lambda
     // pattern)
     this.createFeedbackApi(props.config, props.frontendUrl, feedbackTable)
@@ -338,6 +341,31 @@ export class BackendStack extends cdk.NestedStack {
       })
     )
 
+    // Add DynamoDB read access for the contratos table
+    agentRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ContratosTableReadAccess",
+        effect: iam.Effect.ALLOW,
+        actions: ["dynamodb:Query", "dynamodb:Scan", "dynamodb:GetItem"],
+        resources: [
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/${config.stack_name_base}-contratos`,
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/${config.stack_name_base}-contratos/index/*`,
+        ],
+      })
+    )
+
+    // Add Bedrock Knowledge Base retrieve access for contract semantic search
+    agentRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "KnowledgeBaseRetrieveAccess",
+        effect: iam.Effect.ALLOW,
+        actions: ["bedrock:Retrieve"],
+        resources: [
+          `arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/*`,
+        ],
+      })
+    )
+
     // Add OAuth2 Credential Provider access for AgentCore Runtime
     // The @requires_access_token decorator performs a two-stage process:
     // 1. GetOauth2CredentialProvider - Looks up provider metadata (ARN, vendor config, grant types)
@@ -389,6 +417,9 @@ export class BackendStack extends cdk.NestedStack {
       // See config.yaml: ltm_top_k and ltm_relevance_score.
       LTM_TOP_K: String(config.backend.ltm_top_k),
       LTM_RELEVANCE_SCORE: String(config.backend.ltm_relevance_score),
+      // Contract management: DynamoDB table name and Knowledge Base ID
+      CONTRATOS_TABLE_NAME: `${config.stack_name_base}-contratos`,
+      KNOWLEDGE_BASE_ID: config.backend.knowledge_base_id || "",
     }
 
     // Add claude-agent-sdk specific environment variable
@@ -487,6 +518,46 @@ export class BackendStack extends cdk.NestedStack {
       stringValue: `${this.userPoolDomain.domainName}.auth.${cdk.Aws.REGION}.amazoncognito.com`,
       description: "Cognito domain URL for token endpoint",
     })
+  }
+
+  // Creates a DynamoDB table for storing contract structured metadata.
+  // Supports queries by contrato_id (PK), estado (GSI), and proveedor (GSI).
+  private createContratosTable(config: AppConfig): dynamodb.Table {
+    const contratosTable = new dynamodb.Table(this, "ContratosTable", {
+      tableName: `${config.stack_name_base}-contratos`,
+      partitionKey: {
+        name: "contrato_id",
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    })
+
+    // GSI for querying contracts by status (vigente, vencido, por_vencer)
+    contratosTable.addGlobalSecondaryIndex({
+      indexName: "estado-index",
+      partitionKey: {
+        name: "estado",
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    })
+
+    // GSI for querying contracts by supplier name
+    contratosTable.addGlobalSecondaryIndex({
+      indexName: "proveedor-index",
+      partitionKey: {
+        name: "proveedor",
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    })
+
+    return contratosTable
   }
 
   // Creates a DynamoDB table for storing user feedback.
