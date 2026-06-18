@@ -23,6 +23,10 @@ backend:
   ltm_top_k: 10             # Number of facts to retrieve per turn (default: 10)
   ltm_relevance_score: 0.3  # Minimum similarity threshold for retrieval (default: 0.3)
 
+  # Bedrock Knowledge Base for contract semantic search (RAG).
+  # Created manually or via script. Leave empty until the KB is provisioned.
+  knowledge_base_id: "A4QNPNSI41"  # Knowledge Base para contratos agrícolas
+
   # VPC configuration - required when network_mode is VPC
   # Your VPC must have the necessary VPC endpoints for AWS services.
   # See docs/DEPLOYMENT.md for the full list of required VPC endpoints.
