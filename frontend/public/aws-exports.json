@@ -9,5 +9,6 @@
   "agentRuntimeArn": "arn:aws:bedrock-agentcore:us-east-1:220851193589:runtime/AgContratos_FASTAgent-ZN6yojAQFD",
   "awsRegion": "us-east-1",
   "feedbackApiUrl": "https://2vc45m8i0j.execute-api.us-east-1.amazonaws.com/prod/",
-  "agentPattern": "strands-single-agent"
+  "agentPattern": "strands-single-agent",
+  "identityPoolId": "us-east-1:ffd0522e-e449-4614-9e50-d5da5782adf0"
 }

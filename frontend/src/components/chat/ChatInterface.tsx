@@ -261,7 +261,7 @@ export default function ChatInterface() {
   const hasAssistantMessages = messages.some(message => message.role === "assistant")
 
   return (
-    <div className="flex flex-col h-screen w-full">
+    <div className="flex flex-col h-full w-full">
       {/* Fixed header */}
       <div className="flex-none">
         <ChatHeader onNewChat={startNewChat} canStartNewChat={hasAssistantMessages} />

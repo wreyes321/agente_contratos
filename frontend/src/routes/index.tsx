@@ -3,11 +3,28 @@
 
 import { Routes, Route } from "react-router-dom"
 import ChatPage from "./ChatPage"
+import DocumentsPage from "./DocumentsPage"
+import { AppLayout } from "@/components/layout/AppLayout"
 
 export default function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<ChatPage />} />
+      <Route
+        path="/"
+        element={
+          <AppLayout>
+            <ChatPage />
+          </AppLayout>
+        }
+      />
+      <Route
+        path="/documents"
+        element={
+          <AppLayout>
+            <DocumentsPage />
+          </AppLayout>
+        }
+      />
     </Routes>
   )
 }

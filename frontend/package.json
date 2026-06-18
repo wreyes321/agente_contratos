@@ -13,6 +13,8 @@
     "clean": "rm -rf build/ node_modules/ .vite/"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1071.0",
+    "@aws-sdk/credential-provider-cognito-identity": "^3.972.47",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-progress": "^1.1.7",
