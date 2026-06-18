@@ -61,7 +61,17 @@ export function DocumentUpload() {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<DocumentItem | null>(null)
   const [showUploadZone, setShowUploadZone] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const { token } = useAuth()
+
+  // Track screen size for responsive behavior
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)")
+    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener("change", handler)
+    return () => mq.removeEventListener("change", handler)
+  }, [])
 
   useEffect(() => {
     if (token) {
@@ -238,12 +248,12 @@ export function DocumentUpload() {
       {/* Main content area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="shrink-0 px-6 py-4 border-b flex items-center justify-between gap-4">
+        <div className="shrink-0 px-4 sm:px-6 py-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">Mis Documentos</h1>
+            <h1 className="text-lg sm:text-xl font-semibold">Mis Documentos</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="relative w-64">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="relative flex-1 sm:flex-none sm:w-56">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar archivos..."
@@ -257,19 +267,19 @@ export function DocumentUpload() {
               size="sm"
               onClick={loadExistingDocuments}
               disabled={isLoadingDocs}
-              className="h-9"
+              className="h-9 shrink-0"
             >
               <RefreshCw className={cn("h-4 w-4", isLoadingDocs && "animate-spin")} />
             </Button>
-            <Button size="sm" onClick={open} className="h-9">
-              <Plus className="h-4 w-4 mr-1.5" />
-              Subir archivo
+            <Button size="sm" onClick={open} className="h-9 shrink-0">
+              <Plus className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">Subir archivo</span>
             </Button>
           </div>
         </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-auto p-6 space-y-6">
+        <div className="flex-1 overflow-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6">
           {/* Upload Zone (shown when files are queued or toggled) */}
           {(showUploadZone || files.length > 0) && (
             <Card className="p-4 border-primary/20 bg-primary/[0.02]">
@@ -338,7 +348,7 @@ export function DocumentUpload() {
                   Archivos recientes
                 </h2>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {recentDocs.map((doc) => (
                   <Card
                     key={doc.key}
@@ -412,8 +422,8 @@ export function DocumentUpload() {
               </Card>
             ) : (
               <div className="border rounded-lg overflow-hidden bg-card">
-                {/* Table Header */}
-                <div className="grid grid-cols-[1fr_100px_140px_60px] gap-4 px-4 py-2.5 bg-muted/40 border-b">
+                {/* Table Header - hidden on mobile */}
+                <div className="hidden sm:grid grid-cols-[1fr_100px_140px_60px] gap-4 px-4 py-2.5 bg-muted/40 border-b">
                   <span className="text-xs font-medium text-muted-foreground">Nombre del archivo</span>
                   <span className="text-xs font-medium text-muted-foreground">Tamaño</span>
                   <span className="text-xs font-medium text-muted-foreground">Última modificación</span>
@@ -428,24 +438,26 @@ export function DocumentUpload() {
                       onClick={() => setSelectedDoc(doc)}
                       onDoubleClick={() => openPreview(doc)}
                       className={cn(
-                        "grid grid-cols-[1fr_100px_140px_60px] gap-4 px-4 py-3 items-center cursor-pointer transition-colors group",
+                        "flex sm:grid sm:grid-cols-[1fr_100px_140px_60px] gap-3 sm:gap-4 px-4 py-3 items-center cursor-pointer transition-colors group",
                         selectedDoc?.key === doc.key
                           ? "bg-primary/5"
                           : "hover:bg-muted/30"
                       )}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className="shrink-0 w-8 h-8 rounded-md bg-red-50 dark:bg-red-950/30 flex items-center justify-center">
                           <FileText className="h-4 w-4 text-red-500" />
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{doc.fileName}</p>
-                          <p className="text-xs text-muted-foreground">{formatFileSize(doc.size)}</p>
+                          <p className="text-xs text-muted-foreground sm:hidden">
+                            {formatFileSize(doc.size)} • {formatDate(doc.lastModified)}
+                          </p>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">{formatFileSize(doc.size)}</p>
-                      <p className="text-xs text-muted-foreground">{formatDate(doc.lastModified)}</p>
-                      <div className="flex items-center justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <p className="hidden sm:block text-xs text-muted-foreground">{formatFileSize(doc.size)}</p>
+                      <p className="hidden sm:block text-xs text-muted-foreground">{formatDate(doc.lastModified)}</p>
+                      <div className="flex items-center gap-0.5 sm:justify-center sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={(e) => { e.stopPropagation(); openPreview(doc) }}
                           className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
@@ -470,9 +482,9 @@ export function DocumentUpload() {
         </div>
       </div>
 
-      {/* Right panel - File Details */}
+      {/* Right panel - File Details (desktop only) */}
       {selectedDoc && (
-        <div className="w-72 border-l bg-muted/20 shrink-0 flex flex-col overflow-auto">
+        <div className="hidden lg:flex w-72 border-l bg-muted/20 shrink-0 flex-col overflow-auto">
           <div className="p-4 border-b flex items-center justify-between">
             <h3 className="text-sm font-medium">Detalles del archivo</h3>
             <button
@@ -541,10 +553,10 @@ export function DocumentUpload() {
         onOpenChange={() => { setPreviewUrl(null); setPreviewFileName("") }}
       >
         <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0">
-          <DialogHeader className="px-6 py-4 border-b shrink-0">
+          <DialogHeader className="px-4 sm:px-6 py-4 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2 text-base">
               <FileText className="h-4 w-4 text-red-500" />
-              {previewFileName}
+              <span className="truncate">{previewFileName}</span>
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
@@ -564,6 +576,56 @@ export function DocumentUpload() {
             ) : null}
           </div>
         </DialogContent>
+      </Dialog>
+
+      {/* Mobile file details dialog */}
+      <Dialog
+        open={!!selectedDoc && isMobile}
+        onOpenChange={(open) => { if (!open) setSelectedDoc(null) }}
+      >
+        {selectedDoc && (
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-red-500" />
+                <span className="truncate">{selectedDoc.fileName}</span>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-3">
+                <HardDrive className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Tamaño</p>
+                  <p className="text-sm font-medium">{formatFileSize(selectedDoc.size)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Fecha</p>
+                  <p className="text-sm font-medium">{formatDateFull(selectedDoc.lastModified)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Ubicación</p>
+                  <p className="text-sm font-medium">contratos/</p>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button size="sm" className="flex-1" onClick={() => { openPreview(selectedDoc); setSelectedDoc(null) }}>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Previsualizar
+                </Button>
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => { downloadDocument(selectedDoc); setSelectedDoc(null) }}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Descargar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        )}
       </Dialog>
     </div>
   )
