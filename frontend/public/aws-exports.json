@@ -1,0 +1,13 @@
+{
+  "authority": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_t03ZO3ERX",
+  "client_id": "3p8alhuiu2qnfjk5mch81g0jr5",
+  "redirect_uri": "http://localhost:3000",
+  "post_logout_redirect_uri": "http://localhost:3000",
+  "response_type": "code",
+  "scope": "email openid profile",
+  "automaticSilentRenew": true,
+  "agentRuntimeArn": "arn:aws:bedrock-agentcore:us-east-1:220851193589:runtime/AgContratos_FASTAgent-ZN6yojAQFD",
+  "awsRegion": "us-east-1",
+  "feedbackApiUrl": "https://2vc45m8i0j.execute-api.us-east-1.amazonaws.com/prod/",
+  "agentPattern": "strands-single-agent"
+}

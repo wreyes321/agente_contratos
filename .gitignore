@@ -28,5 +28,4 @@ notebooks/examples/data
 **/.vite
 .venv
 scripts/zip-artifact/
-public/
 .mkdocs/public/
